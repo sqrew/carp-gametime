@@ -1,0 +1,30 @@
+(load "Test.carp")
+(use Test)
+(load "gametime.carp")
+(use Clock)
+
+(deftest gametime-test
+  (let [c (Clock.new)
+        s0 (Test.State.init 0 0)
+        s1 (assert-equal &s0 1.0f (Clock.scale &c) "Initial scale is 1.0")
+        s2 (assert-equal &s1 0.0 (Clock.total &c) "Initial total is 0.0")
+        s3 (assert-equal &s2 0.0 (Clock.dt &c) "Initial dt is 0.0")]
+    (do
+      (System.sleep-micros 10000)
+      (Clock.tick! &c)
+      (let [dt1 (Clock.dt &c)
+            total1 (Clock.total &c)
+            s4 (assert-true &s3 (> dt1 0.0) "dt is positive after sleep")
+            s5 (assert-true &s4 (Generics.approx dt1 total1) "Total approx equals dt after first tick")]
+        (do
+          (Clock.set-scale! &c 0.5f)
+          (System.sleep-micros 10000)
+          (Clock.tick! &c)
+          (let [dt2 (Clock.dt &c)
+                sdt2 (Clock.scaled-dt &c)
+                total2 (Clock.total &c)
+                s6 (assert-true &s5 (Generics.approx (* dt2 0.5) sdt2) "scaled-dt respects scale")
+                s7 (assert-true &s6 (> total2 0.0) "Total is positive")]
+            (do
+              (Clock.reset! &c)
+              (assert-equal &s7 0.0 (Clock.dt &c) "dt is 0.0 after reset"))))))))

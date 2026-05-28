@@ -1,0 +1,72 @@
+(use Double)
+(use Float)
+
+(doc Clock "is a high-precision game timer for tracking delta-time, total time, and FPS.")
+(deftype Clock [
+  last-ns-raw Uint64
+  dt-internal Double
+  total-internal Double
+  scale-internal Float
+  fps-internal Float
+])
+
+(defmodule Clock
+  (doc new "creates a new Clock initialized at the current system time.")
+  (defn new []
+    (Clock.init (System.nanotime) 0.0 0.0 1.0f 0.0f))
+
+  (doc dt "returns the seconds elapsed since the last tick (unscaled).")
+  (defn dt [c]
+    @(Clock.dt-internal c))
+
+  (doc scaled-dt "returns the seconds elapsed since the last tick, multiplied by the current time-scale.")
+  (defn scaled-dt [c]
+    (Double.* @(Clock.dt-internal c) (Double.from-float @(Clock.scale-internal c))))
+
+  (doc total "returns the total elapsed seconds since the clock was created.")
+  (defn total [c]
+    @(Clock.total-internal c))
+
+  (doc fps "returns the current calculated frames per second.")
+  (defn fps [c]
+    @(Clock.fps-internal c))
+
+  (doc scale "returns the current time scale.")
+  (defn scale [c]
+    @(Clock.scale-internal c))
+
+  (doc set-scale! "sets the time scale multiplier (e.g. 0.5 for slow-motion).")
+  (defn set-scale! [c s]
+    (Clock.set-scale-internal! c s))
+
+  (doc pause! "pauses the clock by setting the time scale to 0.0.")
+  (defn pause! [c]
+    (Clock.set-scale-internal! c 0.0f))
+
+  (doc unpause! "unpauses the clock by resetting the time scale to 1.0.")
+  (defn unpause! [c]
+    (Clock.set-scale-internal! c 1.0f))
+
+  (doc tick! "updates the clock state based on the current system time. 
+Should be called once per frame at the start of the update loop.")
+  (defn tick! [c]
+    (let [now (System.nanotime)
+          last @(Clock.last-ns-raw c)
+          zero-ns (Uint64.from-long 0l)
+          diff (if (= last zero-ns) zero-ns (Uint64.- now last))]
+      (do
+        (let [dt-sec (Double./ (Double.from-long (Uint64.to-long diff)) 1000000000.0)]
+          (do
+            (Clock.set-dt-internal! c dt-sec)
+            (Clock.set-total-internal! c (Double.+ @(Clock.total-internal c) dt-sec))
+            (if (Double.> dt-sec 0.0)
+              (Clock.set-fps-internal! c (Double.to-float (Double./ 1.0 dt-sec)))
+              (Clock.set-fps-internal! c 0.0f))))
+        (Clock.set-last-ns-raw! c now))))
+
+  (doc reset! "resets the clock's last-ns-raw to the current time, effective skipping a large time gap.")
+  (defn reset! [c]
+    (do
+      (Clock.set-last-ns-raw! c (System.nanotime))
+      (Clock.set-dt-internal! c 0.0)))
+)
