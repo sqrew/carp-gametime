@@ -8,13 +8,21 @@ The Clock stores time internally as raw `Uint64` nanoseconds to avoid the cumula
 associated with floating-point summation. It also provides delta clamping to prevent 
 physics instability during frame spikes (e.g., when the debugger is paused).
 
+### Dual-Time Tracking
+The module distinguishes between two types of total time:
+1. **Simulation Total** (`total`): Accumulates clamped delta-times. This represents the 
+   \"logical\" time the simulation has experienced.
+2. **Real Total** (`real-total`): Accumulates actual wall-clock time. Useful for profiling, 
+   telemetry, and non-simulated UI.
+
 ### Pause Semantics
 `pause!` and `unpause!` affect `scaled-dt` only. The underlying `unscaled-dt` and `total` 
 timers continue to advance, allowing for unscaled UI animations or network sync during 
 gameplay pauses.")
 (deftype Clock [
   last-ns-raw Uint64
-  total-ns-raw Uint64
+  sim-total-ns-raw Uint64
+  real-total-ns-raw Uint64
   dt-ns-raw Uint64
   scale-raw Double
   max-dt-raw Double
@@ -26,9 +34,9 @@ gameplay pauses.")
   (doc new "creates a new Clock initialized at the current system time.
 Default max-dt is 0.1s (100ms).")
   (defn new []
-    (Clock.init (System.nanotime) (Uint64.from-long 0l) (Uint64.from-long 0l) 1.0 0.1 0.0 0.0))
+    (Clock.init (System.nanotime) (Uint64.from-long 0l) (Uint64.from-long 0l) (Uint64.from-long 0l) 1.0 0.1 0.0 0.0))
 
-  (doc unscaled-dt "returns the seconds elapsed since the last tick (unscaled).")
+  (doc unscaled-dt "returns the seconds elapsed since the last tick (unscaled and clamped).")
   (defn unscaled-dt [c]
     (/ (Double.from-long (Uint64.to-long @(Clock.dt-ns-raw c))) 1000000000.0))
 
@@ -36,9 +44,13 @@ Default max-dt is 0.1s (100ms).")
   (defn scaled-dt [c]
     (* (Clock.unscaled-dt c) @(Clock.scale-raw c)))
 
-  (doc total "returns the total elapsed seconds since the clock was created.")
+  (doc total "returns the total elapsed seconds of simulation time (sum of clamped deltas).")
   (defn total [c]
-    (/ (Double.from-long (Uint64.to-long @(Clock.total-ns-raw c))) 1000000000.0))
+    (/ (Double.from-long (Uint64.to-long @(Clock.sim-total-ns-raw c))) 1000000000.0))
+
+  (doc real-total "returns the actual total elapsed wall-clock seconds.")
+  (defn real-total [c]
+    (/ (Double.from-long (Uint64.to-long @(Clock.real-total-ns-raw c))) 1000000000.0))
 
   (doc fps "returns the instantaneous frames per second.")
   (defn fps [c]
@@ -81,7 +93,8 @@ Should be called once per frame at the start of the update loop.")
           diff (if (and (Uint64.> max-ns zero-ns) (Uint64.> raw-diff max-ns)) max-ns raw-diff)]
       (do
         (Clock.set-dt-ns-raw! c diff)
-        (Clock.set-total-ns-raw! c (Uint64.+ @(Clock.total-ns-raw c) diff))
+        (Clock.set-sim-total-ns-raw! c (Uint64.+ @(Clock.sim-total-ns-raw c) diff))
+        (Clock.set-real-total-ns-raw! c (Uint64.+ @(Clock.real-total-ns-raw c) raw-diff))
         (let [dt-sec (Clock.unscaled-dt c)]
           (when (> dt-sec 0.0)
             (let [inst-fps (/ 1.0 dt-sec)
@@ -95,7 +108,7 @@ Should be called once per frame at the start of the update loop.")
                 (Clock.set-smooth-fps-raw! c new-s)))))
         (Clock.set-last-ns-raw! c now))))
 
-  (doc reset! "resets the clock's last-ns to the current time, effective skipping a large time gap.")
+  (doc reset! "resets the clock's last-ns-raw to the current time, effective skipping a large time gap.")
   (defn reset! [c]
     (do
       (Clock.set-last-ns-raw! c (System.nanotime))
