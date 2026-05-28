@@ -6,25 +6,44 @@
 (deftest gametime-test
   (let [c (Clock.new)
         s0 (Test.State.init 0 0)
-        s1 (assert-equal &s0 1.0f (Clock.scale &c) "Initial scale is 1.0")
+        s1 (assert-equal &s0 1.0 (Clock.scale &c) "Initial scale is 1.0")
         s2 (assert-equal &s1 0.0 (Clock.total &c) "Initial total is 0.0")
-        s3 (assert-equal &s2 0.0 (Clock.dt &c) "Initial dt is 0.0")]
+        s3 (assert-equal &s2 0.0 (Clock.unscaled-dt &c) "Initial dt is 0.0")]
     (do
-      (System.sleep-micros 10000)
+      ;; Tick 1: Normal advancement
+      (System.sleep-micros 10000) ;; Sleep 10ms
       (Clock.tick! &c)
-      (let [dt1 (Clock.dt &c)
+      (let [dt1 (Clock.unscaled-dt &c)
             total1 (Clock.total &c)
             s4 (assert-true &s3 (> dt1 0.0) "dt is positive after sleep")
             s5 (assert-true &s4 (Generics.approx dt1 total1) "Total approx equals dt after first tick")]
         (do
-          (Clock.set-scale! &c 0.5f)
+          ;; Tick 2: Scaling
+          (Clock.set-scale! &c 0.5)
           (System.sleep-micros 10000)
           (Clock.tick! &c)
-          (let [dt2 (Clock.dt &c)
+          (let [dt2 (Clock.unscaled-dt &c)
                 sdt2 (Clock.scaled-dt &c)
                 total2 (Clock.total &c)
                 s6 (assert-true &s5 (Generics.approx (* dt2 0.5) sdt2) "scaled-dt respects scale")
-                s7 (assert-true &s6 (> total2 0.0) "Total is positive")]
+                s7 (assert-true &s6 (> total2 total1) "Total increases monotonically")]
             (do
-              (Clock.reset! &c)
-              (assert-equal &s7 0.0 (Clock.dt &c) "dt is 0.0 after reset"))))))))
+              ;; Tick 3: Clamping
+              (Clock.set-max-dt! &c 0.01) ;; Clamp to 10ms
+              (System.sleep-micros 50000) ;; Wait 50ms
+              (Clock.tick! &c)
+              (let [dt3 (Clock.unscaled-dt &c)
+                    s8 (assert-true &s7 (<= dt3 0.0101) "dt is clamped by max-dt")]
+                (do
+                  ;; Tick 4: Pause logic
+                  (Clock.pause! &c)
+                  (System.sleep-micros 10000)
+                  (Clock.tick! &c)
+                  (let [sdt4 (Clock.scaled-dt &c)
+                        dt4 (Clock.unscaled-dt &c)
+                        s9 (assert-equal &s8 0.0 sdt4 "scaled-dt is 0.0 when paused")
+                        s10 (assert-true &s9 (> dt4 0.0) "unscaled-dt still advances when paused")]
+                    (do
+                      ;; Reset
+                      (Clock.reset! &c)
+                      (assert-equal &s10 0.0 (Clock.unscaled-dt &c) "dt is 0.0 after reset"))))))))))))
